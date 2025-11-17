@@ -1,18 +1,5 @@
-# Dockerfile
-FROM openjdk:21-jdk-slim
-
-# App jar name (nee project lo build ayina jar name)
-ARG JAR_FILE=build/libs/*.jar
-
-# Copy jar
-COPY ${JAR_FILE} app.jar
-
-# Timezone India ki set chey (optional, but good)
-ENV TZ=Asia/Kolkata
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-# Expose port
+FROM openjdk:17-jdk-slim
+WORKDIR /app
+COPY target/demo-0.0.1-SNAPSHOT.jar app.jar
 EXPOSE 8080
-
-# Run
-ENTRYPOINT ["java", "-jar", "/app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
