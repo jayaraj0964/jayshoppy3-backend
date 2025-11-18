@@ -40,7 +40,8 @@ public class SecurityConfig {
             "http://localhost:5173",
             "http://localhost:3000",
             "http://localhost:8080",
-            "https://jayshopy.vercel.app"
+            "https://jayshopy.vercel.app",
+            "https://jayshopy-ma48.vercel.app"
         ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
