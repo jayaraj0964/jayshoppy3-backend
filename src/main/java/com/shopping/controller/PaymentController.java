@@ -28,10 +28,9 @@ public class PaymentController {
     private final OrderRepository orderRepo;
     private final CashfreeConfig cashfreeConfig;
     private final ObjectMapper objectMapper;
-
 @PostMapping("/user/create-upi-payment")
-public ResponseEntity<Map<String, Object>> createUpiPayment(@RequestBody Map<String, Object> body) {
-    Long orderId = Long.valueOf(String.valueOf(body.get("orderId")));
+public ResponseEntity<Map<String, Object>> createUpiPayment(@RequestBody Map<String, Object> req) {
+    Long orderId = Long.valueOf(req.get("orderId").toString());
     Orders order = orderRepo.findById(orderId)
             .orElseThrow(() -> new RuntimeException("Order not found"));
 
@@ -40,34 +39,18 @@ public ResponseEntity<Map<String, Object>> createUpiPayment(@RequestBody Map<Str
     String name = order.getUser().getName();
     String phone = order.getUser().getPhone();
 
-    // Cashfree order create chestundi → payment_session_id vastundi
     CreateOrderResult result = cashfreeService.createOrder(orderId, amount, email, name, phone);
 
-    // MERCHANT UPI ID (MANDATORY for QR)
-    String merchantUpiId = cashfreeConfig.getMerchantUpiId();
-    if (merchantUpiId == null || merchantUpiId.trim().isEmpty()) {
-        throw new RuntimeException("Merchant UPI ID not configured!");
-    }
+    Map<String, Object> response = new HashMap<>();
+    response.put("success", true);
+    response.put("orderId", result.orderId);
+    response.put("amount", amount);
+    response.put("qrCodeUrl", result.qrCodeUrl);
+    response.put("paymentSessionId", result.paymentSessionId);
 
-    // FINAL UPI INTENT LINK (Scan cheste direct payment)
-    String upiLink = String.format(
-        "upi://pay?pa=%s&pn=JayShoppy&am=%.2f&cu=INR&tr=ORD_%d&tn=Order Payment",
-        merchantUpiId, amount, orderId
-    );
-
-    // QR CODE GENERATE (qrserver.com — 100% working)
-    String qrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" +
-                       URLEncoder.encode(upiLink, StandardCharsets.UTF_8);
-
-    Map<String, Object> resp = new HashMap<>();
-    resp.put("orderId", "ORD_" + orderId);
-    resp.put("amount", amount);
-    resp.put("qrCodeUrl", qrCodeUrl);           // ← USER KI QR SHOW
-    resp.put("paymentSessionId", result.paymentSessionId); // ← WEBHOOK KI KAVALI
-
-    return ResponseEntity.ok(resp);
+    log.info("UPI Payment Ready → Order: {}, QR: {}", result.orderId, result.qrCodeUrl);
+    return ResponseEntity.ok(response);
 }
-
     @GetMapping("/user/order-status/{orderId}")
     public ResponseEntity<Map<String, Object>> getOrderStatus(@PathVariable Long orderId) {
         Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));

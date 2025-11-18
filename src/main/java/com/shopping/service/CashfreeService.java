@@ -7,12 +7,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
@@ -27,7 +26,6 @@ public class CashfreeService {
     private final ObjectMapper objectMapper;
     private final CashfreeConfig cashfreeConfig;
 
-    // Response class
     public static class CreateOrderResult {
         public String orderId;
         public Double amount;
@@ -35,90 +33,87 @@ public class CashfreeService {
         public String paymentSessionId;
     }
 
-    // CORRECT HEADERS – 2025 LATEST METHOD (Basic Auth)
     private HttpHeaders getHeaders() {
         HttpHeaders headers = new HttpHeaders();
-
-        // BASIC AUTH (MANDATORY SINCE 2024)
         String auth = cashfreeConfig.getAppId() + ":" + cashfreeConfig.getSecretKey();
-        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
-        headers.set("Authorization", "Basic " + encodedAuth);
+        String encoded = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
 
-        // Required headers
+        headers.set("Authorization", "Basic " + encoded);
         headers.set("x-api-version", "2023-08-01");
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(java.util.Collections.singletonList(MediaType.APPLICATION_JSON));
-
         return headers;
     }
 
-    public CreateOrderResult createOrder(Long dbOrderId, double amountInRupees, String email, String name, String phone, String returnUrl) {
+    public CreateOrderResult createOrder(Long dbOrderId, double amount, String email, String name, String phone) {
         if (phone == null || !phone.matches("^\\d{10}$")) {
-            throw new RuntimeException("Invalid phone number. Must be 10 digits.");
+            throw new IllegalArgumentException("Phone must be 10 digits");
         }
 
         String url = cashfreeConfig.getBaseUrl() + "/pg/orders";
-
         String orderId = "ORD_" + dbOrderId;
 
         Map<String, Object> body = new HashMap<>();
         body.put("order_id", orderId);
-        body.put("order_amount", amountInRupees);
+        body.put("order_amount", amount);
         body.put("order_currency", "INR");
 
         Map<String, Object> customer = new HashMap<>();
-        customer.put("customer_id", "user_" + dbOrderId);
+        customer.put("customer_id", "cust_" + dbOrderId);
         customer.put("customer_name", name != null ? name : "Customer");
-        customer.put("customer_email", email != null ? email : "customer@example.com");
+        customer.put("customer_email", email != null ? email : "user@example.com");
         customer.put("customer_phone", phone);
         body.put("customer_details", customer);
 
-        Map<String, Object> orderMeta = new HashMap<>();
-        orderMeta.put("return_url", "https://jayshopy-ma48.vercel.app/order-success?order_id={order_id}");
-        orderMeta.put("notify_url", "https://jayshoppy3-backend-1.onrender.com/api/user/webhook/cashfree");
-        body.put("order_meta", orderMeta);
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("return_url", "https://jayshopy-ma48.vercel.app/order-success?order_id={order_id}");
+        meta.put("notify_url", "https://jayshoppy3-backend-1.onrender.com/api/user/webhook/cashfree");
+        body.put("order_meta", meta);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, getHeaders());
 
-        log.info("Creating Cashfree Order → URL: {}, OrderId: {}", url, orderId);
+        log.info("Creating Cashfree Order → URL: {}, OrderId: {}, Amount: {}", url, orderId, amount);
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
 
-            if (!response.getStatusCode().is2xxSuccessful()) {
-                log.error("Cashfree failed: {} {}", response.getStatusCode(), response.getBody());
-                throw new RuntimeException("Payment gateway error");
-            }
-
             JsonNode root = objectMapper.readTree(response.getBody());
-            log.info("Cashfree Success: {}", response.getBody());
+            log.info("Cashfree Response: {}", response.getBody());
 
             CreateOrderResult result = new CreateOrderResult();
             result.orderId = root.path("order_id").asText();
-            result.amount = amountInRupees;
+            result.amount = amount;
             result.paymentSessionId = root.path("payment_session_id").asText();
 
-            // QR Code (for UPI Intent)
-            String qr = root.path("payments").path("url").asText(null);
+            // BEST QR CODE LOGIC (CASHFREE → FALLBACK → UPI INTENT)
+            String qr = root.path("payments").path("url").asText();
             if (qr == null || qr.isEmpty()) {
-                qr = root.path("payment_link").asText(null);
+                qr = root.path("payment_link").asText();
             }
-            result.qrCodeUrl = qr;
 
+            // If Cashfree doesn't give QR → Generate UPI Intent QR
+            if (qr == null || qr.isEmpty()) {
+                String merchantUpi = cashfreeConfig.getMerchantUpiId();
+                if (merchantUpi != null && !merchantUpi.trim().isEmpty()) {
+                    String upiLink = String.format(
+                        "upi://pay?pa=%s&pn=JayShoppy&am=%.2f&cu=INR&tr=%s&tn=Order Payment",
+                        merchantUpi, amount, orderId
+                    );
+                    qr = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" +
+                         URLEncoder.encode(upiLink, StandardCharsets.UTF_8);
+                }
+            }
+
+            result.qrCodeUrl = qr;
             return result;
 
         } catch (Exception e) {
-            log.error("Cashfree order creation failed", e);
+            log.error("Cashfree order creation failed for order {}", dbOrderId, e);
             throw new RuntimeException("Payment failed. Please try again.");
         }
     }
 
-    // Overloaded method
-    public CreateOrderResult createOrder(Long dbOrderId, double amountInRupees, String email, String name, String phone) {
-        return createOrder(dbOrderId, amountInRupees, email, name, phone, null);
-    }
-
-    // Webhook signature verify (MANDATORY)
+    // Webhook Signature Verification
     public boolean verifyWebhookSignature(String payload, String signature, String timestamp) {
         try {
             String data = timestamp + "." + payload;
@@ -129,7 +124,7 @@ public class CashfreeService {
             String computed = Base64.getEncoder().encodeToString(hash);
             return computed.equals(signature);
         } catch (Exception e) {
-            log.error("Webhook verification failed", e);
+            log.error("Webhook signature verification failed", e);
             return false;
         }
     }
