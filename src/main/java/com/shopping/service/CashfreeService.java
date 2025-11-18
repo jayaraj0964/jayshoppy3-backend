@@ -27,124 +27,109 @@ public class CashfreeService {
     private final ObjectMapper objectMapper;
     private final CashfreeConfig cashfreeConfig;
 
+    // Response class
     public static class CreateOrderResult {
         public String orderId;
         public Double amount;
         public String qrCodeUrl;
-        public String paymentSessionId;  // ← NEW
+        public String paymentSessionId;
     }
 
+    // CORRECT HEADERS – 2025 LATEST METHOD (Basic Auth)
     private HttpHeaders getHeaders() {
         HttpHeaders headers = new HttpHeaders();
-        headers.set("x-client-id", cashfreeConfig.getAppId());
-        headers.set("x-client-secret", cashfreeConfig.getSecretKey());
+
+        // BASIC AUTH (MANDATORY SINCE 2024)
+        String auth = cashfreeConfig.getAppId() + ":" + cashfreeConfig.getSecretKey();
+        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
+        headers.set("Authorization", "Basic " + encodedAuth);
+
+        // Required headers
         headers.set("x-api-version", "2023-08-01");
-        headers.setAccept(MediaType.parseMediaTypes("application/json"));
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(java.util.Collections.singletonList(MediaType.APPLICATION_JSON));
+
         return headers;
     }
 
     public CreateOrderResult createOrder(Long dbOrderId, double amountInRupees, String email, String name, String phone, String returnUrl) {
         if (phone == null || !phone.matches("^\\d{10}$")) {
-            throw new RuntimeException("Missing or invalid customer phone. Provide a 10 digit phone number for the customer.");
+            throw new RuntimeException("Invalid phone number. Must be 10 digits.");
         }
 
-        String base = cashfreeConfig.getBaseUrl();
-        if (!base.endsWith("/")) base = base + "/";
-        String url = base + "pg/orders";
+        String url = cashfreeConfig.getBaseUrl() + "/pg/orders";
 
-        Map<String, Object> body = new HashMap<>();
         String orderId = "ORD_" + dbOrderId;
 
+        Map<String, Object> body = new HashMap<>();
         body.put("order_id", orderId);
         body.put("order_amount", amountInRupees);
         body.put("order_currency", "INR");
 
         Map<String, Object> customer = new HashMap<>();
-        customer.put("customer_id", "user_" + (dbOrderId == null ? "0" : dbOrderId));
-        customer.put("customer_email", email == null ? "" : email);
+        customer.put("customer_id", "user_" + dbOrderId);
+        customer.put("customer_name", name != null ? name : "Customer");
+        customer.put("customer_email", email != null ? email : "customer@example.com");
         customer.put("customer_phone", phone);
-        customer.put("customer_name", name == null ? "" : name);
         body.put("customer_details", customer);
 
         Map<String, Object> orderMeta = new HashMap<>();
-        if (returnUrl != null) orderMeta.put("return_url", returnUrl);
         orderMeta.put("return_url", "https://jayshopy-ma48.vercel.app/order-success?order_id={order_id}");
         orderMeta.put("notify_url", "https://jayshoppy3-backend-1.onrender.com/api/user/webhook/cashfree");
         body.put("order_meta", orderMeta);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, getHeaders());
 
-        try {
-            log.info("Creating Cashfree order url={} headers={} body={}", url, getHeaders().toSingleValueMap(), objectMapper.writeValueAsString(body));
-        } catch (Exception e) {
-            log.debug("Could not log request body: {}", e.getMessage());
-        }
+        log.info("Creating Cashfree Order → URL: {}, OrderId: {}", url, orderId);
 
         try {
-            ResponseEntity<String> resp = restTemplate.postForEntity(url, entity, String.class);
-            log.info("Cashfree createOrder response status={} body={}", resp.getStatusCodeValue(), resp.getBody());
+            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
 
-            if (!resp.getStatusCode().is2xxSuccessful()) {
-                throw new RuntimeException("Cashfree order creation failed: status=" + resp.getStatusCodeValue() + " body=" + resp.getBody());
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                log.error("Cashfree failed: {} {}", response.getStatusCode(), response.getBody());
+                throw new RuntimeException("Payment gateway error");
             }
 
-            String respBody = resp.getBody();
-            JsonNode root = objectMapper.readTree(respBody);
+            JsonNode root = objectMapper.readTree(response.getBody());
+            log.info("Cashfree Success: {}", response.getBody());
 
             CreateOrderResult result = new CreateOrderResult();
-            result.orderId = root.path("order_id").asText(orderId);
+            result.orderId = root.path("order_id").asText();
             result.amount = amountInRupees;
-            result.paymentSessionId = root.path("payment_session_id").asText(null);  // ← ADDED
+            result.paymentSessionId = root.path("payment_session_id").asText();
 
-            // Optional: Check if Cashfree returns QR
-            String upiUrl = root.path("upi_url").asText(null);
-            String qrUrl = root.path("qr_code_url").asText(null);
-            if (upiUrl != null && !upiUrl.isEmpty()) result.qrCodeUrl = upiUrl;
-            else if (qrUrl != null && !qrUrl.isEmpty()) result.qrCodeUrl = qrUrl;
-            else result.qrCodeUrl = null;
+            // QR Code (for UPI Intent)
+            String qr = root.path("payments").path("url").asText(null);
+            if (qr == null || qr.isEmpty()) {
+                qr = root.path("payment_link").asText(null);
+            }
+            result.qrCodeUrl = qr;
 
             return result;
-        } catch (HttpClientErrorException httpEx) {
-            String respBody = httpEx.getResponseBodyAsString();
-            log.error("Cashfree HTTP error status={} body={}", httpEx.getStatusCode().value(), respBody);
-            throw new RuntimeException("Cashfree create order failed: " + httpEx.getStatusCode() + " body=" + respBody, httpEx);
-        } catch (RestClientException rce) {
-            log.error("RestClientException creating Cashfree order", rce);
-            throw new RuntimeException("Cashfree create order failed", rce);
+
         } catch (Exception e) {
-            log.error("Error parsing Cashfree create order response", e);
-            throw new RuntimeException("Invalid Cashfree response", e);
+            log.error("Cashfree order creation failed", e);
+            throw new RuntimeException("Payment failed. Please try again.");
         }
     }
 
-    public CreateOrderResult createOrder(Long dbOrderId, double amountInRupees, String email, String name) {
-        return createOrder(dbOrderId, amountInRupees, email, name, null, null);
+    // Overloaded method
+    public CreateOrderResult createOrder(Long dbOrderId, double amountInRupees, String email, String name, String phone) {
+        return createOrder(dbOrderId, amountInRupees, email, name, phone, null);
     }
 
-    // Optional: Dynamic QR (kept but not used in sandbox)
-    public String generateDynamicQR(Long dbOrderId, double amountInRupees, int expirySeconds) {
-        // ... (same as before, optional)
-        throw new RuntimeException("Dynamic QR not supported in sandbox");
-    }
-
-    public boolean verifyWebhookSignature(String payload, String receivedSignature, String timestamp) {
+    // Webhook signature verify (MANDATORY)
+    public boolean verifyWebhookSignature(String payload, String signature, String timestamp) {
         try {
-            String secret = cashfreeConfig.getSecretKey();
-            if (secret == null) {
-                log.warn("Cashfree secret key not configured");
-                return false;
-            }
-            String signed = timestamp + "." + payload;
+            String data = timestamp + "." + payload;
             Mac mac = Mac.getInstance("HmacSHA256");
-            SecretKeySpec keySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-            mac.init(keySpec);
-            byte[] rawHmac = mac.doFinal(signed.getBytes(StandardCharsets.UTF_8));
-            String computed = Base64.getEncoder().encodeToString(rawHmac);
-            log.debug("Webhook signature computed={}, received={}", computed, receivedSignature);
-            return computed.equals(receivedSignature);
+            SecretKeySpec key = new SecretKeySpec(cashfreeConfig.getSecretKey().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            mac.init(key);
+            byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+            String computed = Base64.getEncoder().encodeToString(hash);
+            return computed.equals(signature);
         } catch (Exception e) {
-            log.error("Webhook signature verification failed", e);
+            log.error("Webhook verification failed", e);
             return false;
         }
     }
