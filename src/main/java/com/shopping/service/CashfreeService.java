@@ -46,6 +46,13 @@ public class CashfreeService {
     }
 
     public CreateOrderResult createOrder(Long dbOrderId, double amount, String email, String name, String phone) {
+
+    log.info("=== CASHFREE CREDENTIALS CURRENTLY BEING USED ===");
+    log.info("APP_ID          : {}", cashfreeConfig.getAppId());
+    log.info("SECRET_KEY      : {}", cashfreeConfig.getSecretKey());
+    log.info("BASE_URL        : {}", cashfreeConfig.getBaseUrl());
+    log.info("MERCHANT_UPI_ID : {}", cashfreeConfig.getMerchantUpiId());
+    log.info("================================================");
         if (phone == null || !phone.matches("^\\d{10}$")) {
             throw new IllegalArgumentException("Phone must be 10 digits");
         }
