@@ -70,7 +70,7 @@ public class CashfreeService {
         Map<String, Object> orderMeta = new HashMap<>();
         if (returnUrl != null) orderMeta.put("return_url", returnUrl);
         orderMeta.put("return_url", "https://jayshopy.vercel.app/order-success?order_id={order_id}");
-        orderMeta.put("notify_url", "https://jayshopy.vercel.app/api/user/webhook/cashfree");
+        orderMeta.put("notify_url", "https://jayshoppy3-backend-1.onrender.com/api/user/webhook/cashfree");
         body.put("order_meta", orderMeta);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, getHeaders());
