@@ -15,4 +15,9 @@ public class CashfreeConfig {
     private String returnUrl; 
     private String merchantUpiId;
     
+
+    public String getBaseUrl() {
+    if (baseUrl == null) return null;
+    return baseUrl.trim(); 
+}
 }
