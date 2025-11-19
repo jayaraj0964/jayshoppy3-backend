@@ -1,3 +1,5 @@
+// src/main/java/com/shopping/service/CashfreeService.java
+
 package com.shopping.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -7,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
@@ -32,7 +35,7 @@ public class CashfreeService {
         public Double amount;
         public String qrCodeUrl;
         public String paymentSessionId;
-        public String paymentLink;    // ← Cards & Full Checkout Link
+        public String paymentLink;
     }
 
     private HttpHeaders getHeaders() {
@@ -42,22 +45,33 @@ public class CashfreeService {
 
         headers.set("Authorization", "Basic " + encoded);
         headers.set("x-api-version", "2023-08-01");
+        headers.set("x-client-id", cashfreeConfig.getAppId());
+        headers.set("x-client-secret", cashfreeConfig.getSecretKey());
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(java.util.Collections.singletonList(MediaType.APPLICATION_JSON));
+
         return headers;
     }
 
     public CreateOrderResult createOrder(Long dbOrderId, double amount, String email, String name, String phone) {
 
-        log.info("=== CASHFREE CREDENTIALS CURRENTLY BEING USED ===");
-        log.info("APP_ID          : {}", cashfreeConfig.getAppId());
-        log.info("SECRET_KEY      : {}", cashfreeConfig.getSecretKey());
-        log.info("BASE_URL        : {}", cashfreeConfig.getBaseUrl());
-        log.info("MERCHANT_UPI_ID : {}", cashfreeConfig.getMerchantUpiId());
-        log.info("================================================");
+        log.info("==================================================");
+        log.info("CASHFREE ORDER CREATION STARTED");
+        log.info("DB Order ID     : {}", dbOrderId);
+        log.info("Amount          : ₹{}", amount);
+        log.info("Customer        : {} ({})", name, email);
+        log.info("Phone           : {}", phone);
+        log.info("App ID          : {}", cashfreeConfig.getAppId());
+        log.info("Secret Key (end): {}", 
+                 cashfreeConfig.getSecretKey().length() > 10 
+                 ? "..." + cashfreeConfig.getSecretKey().substring(cashfreeConfig.getSecretKey().length() - 10) 
+                 : "HIDDEN");
+        log.info("Base URL        : {}", cashfreeConfig.getBaseUrl());
+        log.info("Environment     : {}", cashfreeConfig.getBaseUrl().contains("sandbox") ? "TEST" : "PRODUCTION");
+        log.info("==================================================");
 
         if (phone == null || !phone.matches("^\\d{10}$")) {
-            throw new IllegalArgumentException("Phone must be 10 digits");
+            throw new IllegalArgumentException("Invalid phone number: must be 10 digits");
         }
 
         String url = cashfreeConfig.getBaseUrl() + "/pg/orders";
@@ -70,8 +84,8 @@ public class CashfreeService {
 
         Map<String, Object> customer = new HashMap<>();
         customer.put("customer_id", "cust_" + dbOrderId);
-        customer.put("customer_name", name != null ? name : "Customer");
-        customer.put("customer_email", email != null ? email : "user@example.com");
+        customer.put("customer_name", name != null && !name.isEmpty() ? name : "Jay Shoppy Customer");
+        customer.put("customer_email", email != null && !email.isEmpty() ? email : "customer@example.com");
         customer.put("customer_phone", phone);
         body.put("customer_details", customer);
 
@@ -82,56 +96,102 @@ public class CashfreeService {
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, getHeaders());
 
-        log.info("Creating Cashfree Order → URL: {}, OrderId: {}, Amount: {}", url, orderId, amount);
+        log.info("REQUEST → POST {}", url);
+        log.info("Request Body: {}", body);
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+
+            log.info("CASHFREE SUCCESS! Status: {}", response.getStatusCode());
+            log.info("Full Response Body: {}", response.getBody());
+
             JsonNode root = objectMapper.readTree(response.getBody());
-            log.info("Cashfree Full Response: {}", response.getBody());
 
             CreateOrderResult result = new CreateOrderResult();
             result.orderId = root.path("order_id").asText();
             result.amount = amount;
             result.paymentSessionId = root.path("payment_session_id").asText();
-            result.paymentLink = root.path("payment_link").asText(); // ← Cards & Full Checkout
+            result.paymentLink = root.path("payment_link").asText();
 
-            // === BEST QR CODE LOGIC (Priority Order) ===
-            String qrCodeUrl = root.path("payments").path("url").asText(); // Cashfree native QR
-
+            // QR Logic
+            String qrCodeUrl = root.path("payments").path("url").asText();
             if (qrCodeUrl == null || qrCodeUrl.isEmpty()) {
-                qrCodeUrl = root.path("payment_link").asText(); // Fallback to payment link QR
+                qrCodeUrl = root.path("payment_link").asText();
             }
-
-            // Final Fallback: Generate UPI Intent QR using merchant VPA
             if (qrCodeUrl == null || qrCodeUrl.isEmpty()) {
-                String merchantUpi = cashfreeConfig.getMerchantUpiId();
-                if (merchantUpi != null && !merchantUpi.trim().isEmpty()) {
+                String vpa = cashfreeConfig.getMerchantUpiId();
+                if (vpa != null && !vpa.trim().isEmpty()) {
                     String upiLink = String.format(
-                        "upi://pay?pa=%s&pn=JayShoppy&am=%.2f&cu=INR&tr=%s&tn=Order Payment",
-                        merchantUpi, amount, orderId
+                        "upi://pay?pa=%s&pn=JayShoppy&am=%.2f&cu=INR&tr=%s",
+                        vpa, amount, orderId
                     );
                     qrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" +
                                 URLEncoder.encode(upiLink, StandardCharsets.UTF_8);
-                    log.info("Generated Fallback UPI QR for VPA: {}", merchantUpi);
+                    log.info("Generated Fallback QR using VPA: {}", vpa);
                 }
             }
 
-            result.qrCodeUrl = qrCodeUrl; // ← Final QR URL
+            result.qrCodeUrl = qrCodeUrl;
 
-            log.info("Payment Ready → Order: {}, HasQR: {}, HasLink: {}", 
+            log.info("ORDER READY → ID: {} | QR: {} | Card Link: {}", 
                      result.orderId, 
-                     result.qrCodeUrl != null && !result.qrCodeUrl.isEmpty(),
-                     result.paymentLink != null && !result.paymentLink.isEmpty());
+                     result.qrCodeUrl != null, 
+                     result.paymentLink != null);
 
             return result;
 
-        } catch (Exception e) {
-            log.error("Cashfree order creation failed for order {}", dbOrderId, e);
-            throw new RuntimeException("Payment gateway error. Please try again.");
+       } catch (HttpClientErrorException e) {
+    // SUPER SAFE + DETAILED 401 LOGGING (NO NULL POINTER)
+    log.error("==================================================");
+    log.error("CASHFREE PAYMENT GATEWAY ERROR!");
+    log.error("HTTP Status     : {}", e.getStatusCode());
+    log.error("Error Message   : {}", e.getMessage());
+
+    // SAFELY GET RESPONSE BODY (null check)
+    String responseBody = e.getResponseBodyAsString();
+    if (responseBody == null || responseBody.trim().isEmpty()) {
+        responseBody = "[EMPTY OR NULL RESPONSE BODY]";
+    }
+    log.error("Response Body   : {}", responseBody);
+
+    log.error("Request URL     : {}", url);
+    log.error("App ID          : {}", cashfreeConfig.getAppId());
+    log.error("Secret Key Last : ...{}", 
+              cashfreeConfig.getSecretKey().substring(
+                  Math.max(0, cashfreeConfig.getSecretKey().length() - 10)));
+
+    // NOW SAFE TO LOWERCASE
+    String bodyLower = responseBody.toLowerCase();
+
+    if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+        log.error("100% CONFIRMED → 401 UNAUTHORIZED (Authentication Failed)");
+
+        if (bodyLower.contains("invalid") || bodyLower.contains("credential")) {
+            log.error("REASON → App ID or Secret Key is incorrect / has extra spaces");
+        } else if (bodyLower.contains("not active") || bodyLower.contains("disabled") || bodyLower.contains("production")) {
+            log.error("REASON → Production API is DISABLED in Cashfree Dashboard!");
+            log.error("FIX → Dashboard → Settings → API Keys → Turn ON 'Enable Production API'");
+        } else if (bodyLower.contains("account") || bodyLower.contains("merchant")) {
+            log.error("REASON → Merchant account not fully activated for live payments");
+        } else {
+            log.error("REASON → Unknown auth issue – most likely Production mode not enabled");
+        }
+
+        log.error("IMMEDIATE FIX → https://dashboard.cashfree.com → Settings → API Keys → Enable Production API");
+    } else {
+        log.error("Other HTTP Error (not 401) → {}", e.getStatusCode());
+    }
+
+    log.error("==================================================");
+
+    throw new RuntimeException("Payment failed – check server authentication issue. Check logs.");
+} catch (Exception e) {
+            log.error("Exception during Cashfree order creation", e);
+            throw new RuntimeException("Failed to create Cashfree order", e);
         }
     }
 
-    // Webhook Signature Verification
+    // Webhook verification (unchanged)
     public boolean verifyWebhookSignature(String payload, String signature, String timestamp) {
         try {
             String data = timestamp + "." + payload;
@@ -142,7 +202,7 @@ public class CashfreeService {
             String computed = Base64.getEncoder().encodeToString(hash);
             return computed.equals(signature);
         } catch (Exception e) {
-            log.error("Webhook signature verification failed", e);
+            log.error("Webhook verification failed", e);
             return false;
         }
     }

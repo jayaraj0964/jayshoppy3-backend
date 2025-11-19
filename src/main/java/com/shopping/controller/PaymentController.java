@@ -57,27 +57,33 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
     return ResponseEntity.ok(res);
 }
 
+// Add this new method for cards (same logic, but return payment_link)
 @PostMapping("/user/create-card-payment")
 public ResponseEntity<Map<String, Object>> createCardPayment(@RequestBody Map<String, Object> req) {
     Long orderId = Long.valueOf(req.get("orderId").toString());
-    Orders order = orderRepo.findById(orderId).orElseThrow();
+    Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
 
-    CreateOrderResult result = cashfreeService.createOrder(
-        orderId, order.getTotal(), order.getUser().getEmail(),
-        order.getUser().getName(), order.getUser().getPhone()
-    );
+    double amount = order.getTotal();
+    String email = order.getUser().getEmail();
+    String name = order.getUser().getName();
+    String phone = order.getUser().getPhone();
+
+    CreateOrderResult result = cashfreeService.createOrder(orderId, amount, email, name, phone);
 
     if (result.paymentLink == null || result.paymentLink.isEmpty()) {
         throw new RuntimeException("Card payment not available. Try UPI.");
     }
 
     Map<String, Object> res = new HashMap<>();
-    res.put("paymentLink", result.paymentLink);
+    res.put("success", true);
     res.put("orderId", result.orderId);
-    res.put("amount", order.getTotal());
+    res.put("amount", amount);
+    res.put("paymentLink", result.paymentLink);  // ← Main for cards
+    res.put("paymentSessionId", result.paymentSessionId);
+
+    log.info("Card Payment Ready → Order: {}, Link: {}", result.orderId, result.paymentLink);
     return ResponseEntity.ok(res);
 }
-
     @GetMapping("/user/order-status/{orderId}")
     public ResponseEntity<Map<String, Object>> getOrderStatus(@PathVariable Long orderId) {
         Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
