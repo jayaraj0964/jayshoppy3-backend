@@ -26,11 +26,13 @@ public class CashfreeService {
     private final ObjectMapper objectMapper;
     private final CashfreeConfig cashfreeConfig;
 
+    // FULLY UPDATED RESULT CLASS
     public static class CreateOrderResult {
         public String orderId;
         public Double amount;
         public String qrCodeUrl;
         public String paymentSessionId;
+        public String paymentLink;    // ← Cards & Full Checkout Link
     }
 
     private HttpHeaders getHeaders() {
@@ -47,12 +49,13 @@ public class CashfreeService {
 
     public CreateOrderResult createOrder(Long dbOrderId, double amount, String email, String name, String phone) {
 
-    log.info("=== CASHFREE CREDENTIALS CURRENTLY BEING USED ===");
-    log.info("APP_ID          : {}", cashfreeConfig.getAppId());
-    log.info("SECRET_KEY      : {}", cashfreeConfig.getSecretKey());
-    log.info("BASE_URL        : {}", cashfreeConfig.getBaseUrl());
-    log.info("MERCHANT_UPI_ID : {}", cashfreeConfig.getMerchantUpiId());
-    log.info("================================================");
+        log.info("=== CASHFREE CREDENTIALS CURRENTLY BEING USED ===");
+        log.info("APP_ID          : {}", cashfreeConfig.getAppId());
+        log.info("SECRET_KEY      : {}", cashfreeConfig.getSecretKey());
+        log.info("BASE_URL        : {}", cashfreeConfig.getBaseUrl());
+        log.info("MERCHANT_UPI_ID : {}", cashfreeConfig.getMerchantUpiId());
+        log.info("================================================");
+
         if (phone == null || !phone.matches("^\\d{10}$")) {
             throw new IllegalArgumentException("Phone must be 10 digits");
         }
@@ -83,40 +86,48 @@ public class CashfreeService {
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
-
             JsonNode root = objectMapper.readTree(response.getBody());
-            log.info("Cashfree Response: {}", response.getBody());
+            log.info("Cashfree Full Response: {}", response.getBody());
 
             CreateOrderResult result = new CreateOrderResult();
             result.orderId = root.path("order_id").asText();
             result.amount = amount;
             result.paymentSessionId = root.path("payment_session_id").asText();
+            result.paymentLink = root.path("payment_link").asText(); // ← Cards & Full Checkout
 
-            // BEST QR CODE LOGIC (CASHFREE → FALLBACK → UPI INTENT)
-            String qr = root.path("payments").path("url").asText();
-            if (qr == null || qr.isEmpty()) {
-                qr = root.path("payment_link").asText();
+            // === BEST QR CODE LOGIC (Priority Order) ===
+            String qrCodeUrl = root.path("payments").path("url").asText(); // Cashfree native QR
+
+            if (qrCodeUrl == null || qrCodeUrl.isEmpty()) {
+                qrCodeUrl = root.path("payment_link").asText(); // Fallback to payment link QR
             }
 
-            // If Cashfree doesn't give QR → Generate UPI Intent QR
-            if (qr == null || qr.isEmpty()) {
+            // Final Fallback: Generate UPI Intent QR using merchant VPA
+            if (qrCodeUrl == null || qrCodeUrl.isEmpty()) {
                 String merchantUpi = cashfreeConfig.getMerchantUpiId();
                 if (merchantUpi != null && !merchantUpi.trim().isEmpty()) {
                     String upiLink = String.format(
                         "upi://pay?pa=%s&pn=JayShoppy&am=%.2f&cu=INR&tr=%s&tn=Order Payment",
                         merchantUpi, amount, orderId
                     );
-                    qr = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" +
-                         URLEncoder.encode(upiLink, StandardCharsets.UTF_8);
+                    qrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" +
+                                URLEncoder.encode(upiLink, StandardCharsets.UTF_8);
+                    log.info("Generated Fallback UPI QR for VPA: {}", merchantUpi);
                 }
             }
 
-            result.qrCodeUrl = qr;
+            result.qrCodeUrl = qrCodeUrl; // ← Final QR URL
+
+            log.info("Payment Ready → Order: {}, HasQR: {}, HasLink: {}", 
+                     result.orderId, 
+                     result.qrCodeUrl != null && !result.qrCodeUrl.isEmpty(),
+                     result.paymentLink != null && !result.paymentLink.isEmpty());
+
             return result;
 
         } catch (Exception e) {
             log.error("Cashfree order creation failed for order {}", dbOrderId, e);
-            throw new RuntimeException("Payment failed. Please try again.");
+            throw new RuntimeException("Payment gateway error. Please try again.");
         }
     }
 

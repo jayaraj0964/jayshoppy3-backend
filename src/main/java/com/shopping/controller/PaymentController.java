@@ -47,7 +47,7 @@ public ResponseEntity<Map<String, Object>> createUpiPayment(@RequestBody Map<Str
     response.put("amount", amount);
     response.put("qrCodeUrl", result.qrCodeUrl);
     response.put("paymentSessionId", result.paymentSessionId);
-
+    response.put("paymentLink", result.paymentLink);  // ← NEW LINE
     log.info("UPI Payment Ready → Order: {}, QR: {}", result.orderId, result.qrCodeUrl);
     return ResponseEntity.ok(response);
 }
