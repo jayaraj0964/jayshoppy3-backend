@@ -29,28 +29,55 @@ public class PaymentController {
     private final CashfreeConfig cashfreeConfig;
     private final ObjectMapper objectMapper;
 @PostMapping("/user/create-upi-payment")
-public ResponseEntity<Map<String, Object>> createUpiPayment(@RequestBody Map<String, Object> req) {
+public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map<String, Object> req) {
     Long orderId = Long.valueOf(req.get("orderId").toString());
-    Orders order = orderRepo.findById(orderId)
-            .orElseThrow(() -> new RuntimeException("Order not found"));
+    Orders order = orderRepo.findById(orderId).orElseThrow();
 
-    double amount = order.getTotal();
-    String email = order.getUser().getEmail();
-    String name = order.getUser().getName();
-    String phone = order.getUser().getPhone();
+    CreateOrderResult result = cashfreeService.createOrder(
+        orderId, order.getTotal(), order.getUser().getEmail(),
+        order.getUser().getName(), order.getUser().getPhone()
+    );
 
-    CreateOrderResult result = cashfreeService.createOrder(orderId, amount, email, name, phone);
+    // Force UPI QR (even if Cashfree doesn't give, generate fallback)
+    String finalQr = result.qrCodeUrl;
+    if (finalQr == null || finalQr.isEmpty()) {
+        String merchantUpi = cashfreeConfig.getMerchantUpiId();
+        if (merchantUpi != null && !merchantUpi.isEmpty()) {
+            String upiLink = String.format("upi://pay?pa=%s&pn=JayShoppy&am=%.2f&cu=INR&tr=%s",
+                merchantUpi, order.getTotal(), result.orderId);
+            finalQr = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" +
+                      URLEncoder.encode(upiLink, StandardCharsets.UTF_8);
+        }
+    }
 
-    Map<String, Object> response = new HashMap<>();
-    response.put("success", true);
-    response.put("orderId", result.orderId);
-    response.put("amount", amount);
-    response.put("qrCodeUrl", result.qrCodeUrl);
-    response.put("paymentSessionId", result.paymentSessionId);
-    response.put("paymentLink", result.paymentLink);  // ← NEW LINE
-    log.info("UPI Payment Ready → Order: {}, QR: {}", result.orderId, result.qrCodeUrl);
-    return ResponseEntity.ok(response);
+    Map<String, Object> res = new HashMap<>();
+    res.put("qrCodeUrl", finalQr);
+    res.put("orderId", result.orderId);
+    res.put("amount", order.getTotal());
+    return ResponseEntity.ok(res);
 }
+
+@PostMapping("/user/create-card-payment")
+public ResponseEntity<Map<String, Object>> createCardPayment(@RequestBody Map<String, Object> req) {
+    Long orderId = Long.valueOf(req.get("orderId").toString());
+    Orders order = orderRepo.findById(orderId).orElseThrow();
+
+    CreateOrderResult result = cashfreeService.createOrder(
+        orderId, order.getTotal(), order.getUser().getEmail(),
+        order.getUser().getName(), order.getUser().getPhone()
+    );
+
+    if (result.paymentLink == null || result.paymentLink.isEmpty()) {
+        throw new RuntimeException("Card payment not available. Try UPI.");
+    }
+
+    Map<String, Object> res = new HashMap<>();
+    res.put("paymentLink", result.paymentLink);
+    res.put("orderId", result.orderId);
+    res.put("amount", order.getTotal());
+    return ResponseEntity.ok(res);
+}
+
     @GetMapping("/user/order-status/{orderId}")
     public ResponseEntity<Map<String, Object>> getOrderStatus(@PathVariable Long orderId) {
         Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
