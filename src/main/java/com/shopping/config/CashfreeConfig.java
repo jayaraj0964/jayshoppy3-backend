@@ -12,7 +12,8 @@ public class CashfreeConfig {
     private String secretKey;
     private String baseUrl;
     private String mode = "PROD";
-    private String returnUrl; 
+    private String returnUrl;
+    private String notifyUrl;
     private String merchantUpiId;
     
     public String getAppId() {
@@ -25,6 +26,14 @@ public class CashfreeConfig {
 
     public String getBaseUrl() {
         return baseUrl != null ? baseUrl.trim() : null;
+    }
+
+    public String getReturnUrl() {
+        return returnUrl != null ? returnUrl.trim() : null;
+    }
+
+    public String getNotifyUrl() {
+        return notifyUrl != null ? notifyUrl.trim() : null;
     }
 
     public String getMerchantUpiId() {

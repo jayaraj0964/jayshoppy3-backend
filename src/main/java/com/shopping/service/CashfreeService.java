@@ -87,8 +87,16 @@ public class CashfreeService {
         body.put("customer_details", customer);
 
         Map<String, Object> meta = new HashMap<>();
-        meta.put("return_url", "https://jayshopy-ma48.vercel.app/order-success?order_id={order_id}");
-        meta.put("notify_url", "https://jayshoppy3-backend-1.onrender.com/api/user/webhook/cashfree");
+        String returnUrl = cashfreeConfig.getReturnUrl();
+        String notifyUrl = cashfreeConfig.getNotifyUrl();
+        if (returnUrl == null || returnUrl.isBlank()) {
+            throw new IllegalStateException("Missing Cashfree return URL. Set CASHFREE_RETURN_URL in Render.");
+        }
+        if (notifyUrl == null || notifyUrl.isBlank()) {
+            throw new IllegalStateException("Missing Cashfree notify URL. Set CASHFREE_NOTIFY_URL in Render.");
+        }
+        meta.put("return_url", returnUrl);
+        meta.put("notify_url", notifyUrl);
         body.put("order_meta", meta);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, getHeaders());
