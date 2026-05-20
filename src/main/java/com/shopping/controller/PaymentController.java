@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shopping.config.CashfreeConfig;
 import com.shopping.entity.Orders;
 import com.shopping.repository.OrderRepository;
+import com.shopping.repository.UserRepository;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import com.shopping.service.CashfreeService;
 import com.shopping.service.CashfreeService.CreateOrderResult;
 
@@ -28,6 +31,7 @@ public class PaymentController {
     private final OrderRepository orderRepo;
     private final CashfreeConfig cashfreeConfig;
     private final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
 @PostMapping("/user/create-upi-payment")
 public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map<String, Object> req) {
     Long orderId = Long.valueOf(req.get("orderId").toString());
@@ -57,33 +61,79 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
     return ResponseEntity.ok(res);
 }
 
-// Add this new method for cards (same logic, but return payment_link)
-@PostMapping("/user/create-card-payment")
-public ResponseEntity<Map<String, Object>> createCardPayment(@RequestBody Map<String, Object> req) {
-    Long orderId = Long.valueOf(req.get("orderId").toString());
-    Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
+    // Add this new method for cards (same logic, but return payment_link)
+    @PostMapping("/user/create-card-payment")
+    public ResponseEntity<Map<String, Object>> createCardPayment(@RequestBody Map<String, Object> req) {
+        Long orderId = Long.valueOf(req.get("orderId").toString());
+        Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
 
-    double amount = order.getTotal();
-    String email = order.getUser().getEmail();
-    String name = order.getUser().getName();
-    String phone = order.getUser().getPhone();
+        double amount = order.getTotal();
+        String email = order.getUser().getEmail();
+        String name = order.getUser().getName();
+        String phone = order.getUser().getPhone();
 
-    CreateOrderResult result = cashfreeService.createOrder(orderId, amount, email, name, phone);
+        CreateOrderResult result = cashfreeService.createOrder(orderId, amount, email, name, phone);
 
-    if (result.paymentLink == null || result.paymentLink.isEmpty()) {
-        throw new RuntimeException("Card payment not available. Try UPI.");
+        if (result.paymentLink == null || result.paymentLink.isEmpty()) {
+            throw new RuntimeException("Card payment not available. Try UPI.");
+        }
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("success", true);
+        res.put("orderId", result.orderId);
+        res.put("amount", amount);
+        res.put("paymentLink", result.paymentLink);  // ← Main for cards
+        res.put("paymentSessionId", result.paymentSessionId);
+
+        log.info("Card Payment Ready → Order: {}, Link: {}", result.orderId, result.paymentLink);
+        return ResponseEntity.ok(res);
     }
 
-    Map<String, Object> res = new HashMap<>();
-    res.put("success", true);
-    res.put("orderId", result.orderId);
-    res.put("amount", amount);
-    res.put("paymentLink", result.paymentLink);  // ← Main for cards
-    res.put("paymentSessionId", result.paymentSessionId);
+    @PostMapping("/user/create-payment-session")
+    public ResponseEntity<Map<String, Object>> createPaymentSession(
+            @RequestBody Map<String, Object> req,
+            @AuthenticationPrincipal UserDetails userDetails) {
 
-    log.info("Card Payment Ready → Order: {}, Link: {}", result.orderId, result.paymentLink);
-    return ResponseEntity.ok(res);
-}
+        if (userDetails == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        try {
+            String email = userDetails.getUsername();
+            com.shopping.entity.User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // amount
+            double amount = Double.parseDouble(req.get("amount").toString());
+
+            // shippingAddress could be an object; serialize to string
+            Object shipping = req.get("shippingAddress");
+            String shippingStr = shipping == null ? "" : objectMapper.writeValueAsString(shipping);
+
+            Orders order = new Orders();
+            order.setUser(user);
+            order.setTotal(amount);
+            order.setShippingAddress(shippingStr);
+            order.setStatus("PENDING");
+            order = orderRepo.save(order);
+
+            CreateOrderResult result = cashfreeService.createOrder(
+                    order.getId(), order.getTotal(), user.getEmail(), user.getName(), user.getPhone()
+            );
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("orderId", order.getId());
+            response.put("amount", order.getTotal());
+            response.put("paymentSessionId", result.paymentSessionId);
+            response.put("paymentLink", result.paymentLink);
+            response.put("qrCodeUrl", result.qrCodeUrl);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error creating payment session", e);
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
     @GetMapping("/user/order-status/{orderId}")
     public ResponseEntity<Map<String, Object>> getOrderStatus(@PathVariable Long orderId) {
         Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));

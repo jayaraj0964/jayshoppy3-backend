@@ -40,10 +40,7 @@ public class CashfreeService {
 
     private HttpHeaders getHeaders() {
         HttpHeaders headers = new HttpHeaders();
-        String auth = cashfreeConfig.getAppId() + ":" + cashfreeConfig.getSecretKey();
-        String encoded = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
-
-        headers.set("Authorization", "Basic " + encoded);
+        // Cashfree v2023-08-01 API uses x-client-id and x-client-secret headers (NOT Basic Auth)
         headers.set("x-api-version", "2023-08-01");
         headers.set("x-client-id", cashfreeConfig.getAppId());
         headers.set("x-client-secret", cashfreeConfig.getSecretKey());
@@ -184,7 +181,14 @@ public class CashfreeService {
 
     log.error("==================================================");
 
-    throw new RuntimeException("Payment failed – check server authentication issue. Check logs.");
+    String exceptionMessage = "Payment failed: " + e.getStatusCode() + ". " + responseBody;
+    if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+        exceptionMessage = "Authentication failed for Cashfree API. Check App ID / Secret Key and Production API activation.";
+    } else if (bodyLower.contains("transactions are not enabled")) {
+        exceptionMessage = "Cashfree account is not enabled for transactions. Enable transactions in Cashfree dashboard.";
+    }
+
+    throw new RuntimeException(exceptionMessage, e);
 } catch (Exception e) {
             log.error("Exception during Cashfree order creation", e);
             throw new RuntimeException("Failed to create Cashfree order", e);
