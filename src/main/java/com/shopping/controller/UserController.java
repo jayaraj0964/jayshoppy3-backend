@@ -172,4 +172,24 @@ public ResponseEntity<Map<String, Object>> checkout(
 
     return ResponseEntity.ok(res);
 }
+
+@GetMapping("/profile")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<Map<String, Object>> getUserProfile(@AuthenticationPrincipal UserDetails userDetails) {
+    if (userDetails == null) {
+        return ResponseEntity.status(401).build();
+    }
+    String email = userDetails.getUsername();
+    User user = userRepository.findByEmail(email)
+            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+    Map<String, Object> res = new HashMap<>();
+    res.put("id", user.getId());
+    res.put("name", user.getName());
+    res.put("email", user.getEmail());
+    res.put("phone", user.getPhone());
+    res.put("role", user.getRole());
+
+    return ResponseEntity.ok(res);
+}
 }
