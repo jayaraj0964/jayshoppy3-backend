@@ -235,6 +235,20 @@ public class CashfreeService {
         return null;
     }
 
+    public JsonNode getCashfreePayments(String cashfreeOrderId) {
+        String url = cashfreeConfig.getBaseUrl() + "/pg/orders/" + cashfreeOrderId + "/payments";
+        HttpEntity<Void> entity = new HttpEntity<>(getHeaders());
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            if (response.getStatusCode() == HttpStatus.OK) {
+                return objectMapper.readTree(response.getBody());
+            }
+        } catch (Exception e) {
+            log.error("Error fetching payments from Cashfree for order " + cashfreeOrderId, e);
+        }
+        return null;
+    }
+
     // Webhook verification (unchanged)
     public boolean verifyWebhookSignature(String payload, String signature, String timestamp) {
         try {

@@ -188,6 +188,21 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
                                "DROPPED".equalsIgnoreCase(cfStatus)) {
                         order.setStatus("FAILED");
                         orderRepo.save(order);
+                    } else if ("ACTIVE".equalsIgnoreCase(cfStatus)) {
+                        // If order is still ACTIVE on Cashfree, check if there was a failed payment attempt
+                        JsonNode payments = cashfreeService.getCashfreePayments(cashfreeOrderId);
+                        if (payments != null && payments.isArray() && payments.size() > 0) {
+                            JsonNode latestPayment = payments.get(payments.size() - 1);
+                            String paymentStatus = latestPayment.path("payment_status").asText("");
+                            log.info("Latest payment status from Cashfree for order {}: {}", cashfreeOrderId, paymentStatus);
+                            if ("FAILED".equalsIgnoreCase(paymentStatus) || 
+                                "USER_DROPPED".equalsIgnoreCase(paymentStatus) || 
+                                "CANCELLED".equalsIgnoreCase(paymentStatus)) {
+                                order.setStatus("FAILED");
+                                order.setTransactionId(latestPayment.path("cf_payment_id").asText(""));
+                                orderRepo.save(order);
+                            }
+                        }
                     }
                 }
             } catch (Exception e) {
