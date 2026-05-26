@@ -22,7 +22,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final ProductImageRepository imageRepo;
 
-    public ProductResponse uploadProduct(ProductDTO dto, MultipartFile mainFile, List<MultipartFile> extraFiles) throws IOException {
+    public AdminProductResponse uploadProduct(ProductDTO dto, MultipartFile mainFile, List<MultipartFile> extraFiles) throws IOException {
         Product product = new Product();
         product.setName(dto.name());
         product.setDescription(dto.description());
@@ -31,6 +31,10 @@ public class ProductService {
         product.setCategory(dto.category());
         product.setSize(dto.size());
         product.setColor(dto.color());
+        product.setVendorName(dto.vendorName());
+        product.setVendorShopName(dto.vendorShopName());
+        product.setVendorPhone(dto.vendorPhone());
+        product.setCostPrice(dto.costPrice());
 
         if (mainFile != null && !mainFile.isEmpty()) {
             ProductImage mainImage = createImage(mainFile, true);
@@ -49,7 +53,13 @@ public class ProductService {
         }
 
         Product saved = productRepository.save(product);
-        return new ProductResponse(saved);
+        return new AdminProductResponse(saved);
+    }
+
+    public List<AdminProductResponse> getAllAdminProducts() {
+        return productRepository.findAll().stream()
+                .map(AdminProductResponse::new)
+                .collect(Collectors.toList());
     }
 
     public List<ProductResponse> getAllProducts() {
@@ -81,6 +91,10 @@ public class ProductService {
         if (dto.description() != null) product.setDescription(dto.description());
         if (dto.price() != null && dto.price() > 0) product.setPrice(dto.price());
         if (dto.stock() != null && dto.stock() >= 0) product.setStock(dto.stock());
+        if (dto.vendorName() != null) product.setVendorName(dto.vendorName());
+        if (dto.vendorShopName() != null) product.setVendorShopName(dto.vendorShopName());
+        if (dto.vendorPhone() != null) product.setVendorPhone(dto.vendorPhone());
+        if (dto.costPrice() != null) product.setCostPrice(dto.costPrice());
 
         if (dto.imageIdsToDelete() != null && !dto.imageIdsToDelete().isEmpty()) {
             imageRepo.deleteAllById(dto.imageIdsToDelete());

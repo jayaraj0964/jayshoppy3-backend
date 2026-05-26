@@ -3,6 +3,7 @@ package com.shopping.controller;
 import com.shopping.dto.OrderResponseDTO;
 import com.shopping.dto.ProductDTO;
 import com.shopping.dto.ProductResponse;
+import com.shopping.dto.AdminProductResponse;
 import com.shopping.dto.ProductUpdateDTO;
 import com.shopping.entity.Product;
 import com.shopping.entity.User;
@@ -34,18 +35,18 @@ public class AdminController {
     // === PRODUCT APIs ===
 
     @PostMapping(value = "/products", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ProductResponse> uploadProduct(
+    public ResponseEntity<AdminProductResponse> uploadProduct(
         @RequestPart("data") ProductDTO dto,
         @RequestPart("mainFile") MultipartFile mainFile,
         @RequestPart(value = "extraFiles", required = false) List<MultipartFile> extraFiles
     ) throws IOException {
-        ProductResponse response = productService.uploadProduct(dto, mainFile, extraFiles);
+        AdminProductResponse response = productService.uploadProduct(dto, mainFile, extraFiles);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/products")
-    public ResponseEntity<List<ProductResponse>> getAllProducts() {
-        return ResponseEntity.ok(productService.getAllProducts());
+    public ResponseEntity<List<AdminProductResponse>> getAllProducts() {
+        return ResponseEntity.ok(productService.getAllAdminProducts());
     }
 
     // === UPDATE PRODUCT ===

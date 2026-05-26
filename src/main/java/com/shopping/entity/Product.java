@@ -31,6 +31,11 @@ public class Product {
     private String size;
     private String color;
 
+    private String vendorName;
+    private String vendorShopName;
+    private String vendorPhone;
+    private double costPrice;
+
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProductImage> images = new ArrayList<>();
 }

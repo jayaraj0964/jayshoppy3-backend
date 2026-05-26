@@ -7,5 +7,9 @@ public record ProductDTO(
     int stock,
     String category,
     String size,
-    String color
+    String color,
+    String vendorName,
+    String vendorShopName,
+    String vendorPhone,
+    double costPrice
 ) {}

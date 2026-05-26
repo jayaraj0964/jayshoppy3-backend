@@ -7,5 +7,9 @@ public record ProductUpdateDTO(
     String description,
     Double price,
     Integer stock,
-    List<Long> imageIdsToDelete // Optional: delete specific images
+    List<Long> imageIdsToDelete, // Optional: delete specific images
+    String vendorName,
+    String vendorShopName,
+    String vendorPhone,
+    Double costPrice
 ) {}
