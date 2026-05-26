@@ -128,6 +128,11 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
             response.put("paymentLink", result.paymentLink);
             response.put("qrCodeUrl", result.qrCodeUrl);
 
+            // Dynamically detect Cashfree environment from the configured Base URL
+            String baseUrl = cashfreeConfig.getBaseUrl();
+            String envMode = (baseUrl != null && baseUrl.toLowerCase().contains("sandbox")) ? "sandbox" : "production";
+            response.put("environment", envMode);
+
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Error creating payment session", e);
