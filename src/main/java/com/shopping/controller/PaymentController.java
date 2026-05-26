@@ -192,15 +192,44 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
                         // If order is still ACTIVE on Cashfree, check if there was a failed payment attempt
                         JsonNode payments = cashfreeService.getCashfreePayments(cashfreeOrderId);
                         if (payments != null && payments.isArray() && payments.size() > 0) {
-                            JsonNode latestPayment = payments.get(payments.size() - 1);
-                            String paymentStatus = latestPayment.path("payment_status").asText("");
-                            log.info("Latest payment status from Cashfree for order {}: {}", cashfreeOrderId, paymentStatus);
-                            if ("FAILED".equalsIgnoreCase(paymentStatus) || 
-                                "USER_DROPPED".equalsIgnoreCase(paymentStatus) || 
-                                "CANCELLED".equalsIgnoreCase(paymentStatus)) {
-                                order.setStatus("FAILED");
-                                order.setTransactionId(latestPayment.path("cf_payment_id").asText(""));
-                                orderRepo.save(order);
+                            log.info("Cashfree payments list for order {}: {}", cashfreeOrderId, payments.toString());
+                            JsonNode latestPayment = null;
+                            long maxPaymentId = -1;
+                            String maxTime = "";
+                            for (JsonNode payment : payments) {
+                                long paymentId = payment.path("cf_payment_id").asLong(-1);
+                                String paymentTime = payment.path("payment_time").asText("");
+                                if (latestPayment == null) {
+                                    latestPayment = payment;
+                                    maxPaymentId = paymentId;
+                                    maxTime = paymentTime;
+                                } else {
+                                    if (paymentId > maxPaymentId) {
+                                        maxPaymentId = paymentId;
+                                        latestPayment = payment;
+                                    } else if (paymentId == maxPaymentId) {
+                                        if (paymentTime.compareTo(maxTime) > 0) {
+                                            maxTime = paymentTime;
+                                            latestPayment = payment;
+                                        }
+                                    }
+                                }
+                            }
+                            if (latestPayment != null) {
+                                String paymentStatus = latestPayment.path("payment_status").asText("");
+                                log.info("Identified latest payment attempt status: {} (ID: {}, Time: {})", 
+                                    paymentStatus, latestPayment.path("cf_payment_id").asText(""), maxTime);
+                                if ("FAILED".equalsIgnoreCase(paymentStatus) || 
+                                    "USER_DROPPED".equalsIgnoreCase(paymentStatus) || 
+                                    "CANCELLED".equalsIgnoreCase(paymentStatus) ||
+                                    "DROPPED".equalsIgnoreCase(paymentStatus) ||
+                                    "EXPIRED".equalsIgnoreCase(paymentStatus) ||
+                                    "TERMINATED".equalsIgnoreCase(paymentStatus) ||
+                                    "VOID".equalsIgnoreCase(paymentStatus)) {
+                                    order.setStatus("FAILED");
+                                    order.setTransactionId(latestPayment.path("cf_payment_id").asText(""));
+                                    orderRepo.save(order);
+                                }
                             }
                         }
                     }
