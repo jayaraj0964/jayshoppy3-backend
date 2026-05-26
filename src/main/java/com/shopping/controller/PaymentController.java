@@ -10,6 +10,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import com.shopping.service.CashfreeService;
 import com.shopping.service.CashfreeService.CreateOrderResult;
+import com.shopping.service.CartService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,7 @@ public class PaymentController {
     private final CashfreeConfig cashfreeConfig;
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
+    private final CartService cartService;
 @PostMapping("/user/create-upi-payment")
 public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map<String, Object> req) {
     Long orderId = Long.valueOf(req.get("orderId").toString());
@@ -157,6 +159,9 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
                         // Set transactionId to cf_order_id as fallback
                         order.setTransactionId(cfOrder.path("cf_order_id").asText(""));
                         orderRepo.save(order);
+
+                        // Clear the user's cart
+                        cartService.clearCart(order.getUser().getId());
                     }
                 }
             } catch (Exception e) {
@@ -207,6 +212,9 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
                 order.setTransactionId(cfPaymentId);
                 orderRepo.save(order);
                 log.info("Order {} marked PAID (cfPaymentId={})", dbOrderId, cfPaymentId);
+
+                // Clear the user's cart
+                cartService.clearCart(order.getUser().getId());
             } else if ("FAILED".equals(normalized) || "CANCELLED".equals(normalized)) {
                 order.setStatus("FAILED");
                 orderRepo.save(order);
