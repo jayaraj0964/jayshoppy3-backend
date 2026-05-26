@@ -90,7 +90,7 @@ public class AdminController {
         return ResponseEntity.ok("User role updated to " + newRole.toUpperCase());
     }
 
-    @GetMapping("/admin/orders")
+    @GetMapping("/orders")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<OrderResponseDTO>> getAllOrders() {
         List<OrderResponseDTO> orders = orderService.getAllOrders();
@@ -98,7 +98,7 @@ public class AdminController {
     }
 
     // ADMIN: Get User Orders by User ID
-    @GetMapping("/admin/users/{userId}/orders")
+    @GetMapping("/users/{userId}/orders")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<OrderResponseDTO>> getUserOrdersAdmin(@PathVariable Long userId) {
         List<OrderResponseDTO> orders = orderService.getUserOrders(userId);
