@@ -180,7 +180,12 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
 
                         // Clear the user's cart
                         cartService.clearCart(order.getUser().getId());
-                    } else if ("FAILED".equalsIgnoreCase(cfStatus) || "CANCELLED".equalsIgnoreCase(cfStatus) || "EXPIRED".equalsIgnoreCase(cfStatus) || "TERMINATED".equalsIgnoreCase(cfStatus)) {
+                    } else if ("FAILED".equalsIgnoreCase(cfStatus) || 
+                               "CANCELLED".equalsIgnoreCase(cfStatus) || 
+                               "EXPIRED".equalsIgnoreCase(cfStatus) || 
+                               "TERMINATED".equalsIgnoreCase(cfStatus) ||
+                               "USER_DROPPED".equalsIgnoreCase(cfStatus) ||
+                               "DROPPED".equalsIgnoreCase(cfStatus)) {
                         order.setStatus("FAILED");
                         orderRepo.save(order);
                     }
@@ -236,10 +241,15 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
 
                 // Clear the user's cart
                 cartService.clearCart(order.getUser().getId());
-            } else if ("FAILED".equals(normalized) || "CANCELLED".equals(normalized)) {
+            } else if ("FAILED".equals(normalized) || 
+                       "CANCELLED".equals(normalized) || 
+                       "EXPIRED".equals(normalized) || 
+                       "TERMINATED".equals(normalized) || 
+                       "USER_DROPPED".equals(normalized) || 
+                       "DROPPED".equals(normalized)) {
                 order.setStatus("FAILED");
                 orderRepo.save(order);
-                log.info("Order {} marked FAILED/CANCELLED (status {})", dbOrderId, normalized);
+                log.info("Order {} marked FAILED/CANCELLED/DROPPED (status {})", dbOrderId, normalized);
             } else {
                 log.info("Received webhook for order {} with status {}", dbOrderId, normalized);
             }
