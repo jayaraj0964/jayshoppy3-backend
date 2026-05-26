@@ -180,6 +180,9 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
 
                         // Clear the user's cart
                         cartService.clearCart(order.getUser().getId());
+                    } else if ("FAILED".equalsIgnoreCase(cfStatus) || "CANCELLED".equalsIgnoreCase(cfStatus) || "EXPIRED".equalsIgnoreCase(cfStatus) || "TERMINATED".equalsIgnoreCase(cfStatus)) {
+                        order.setStatus("FAILED");
+                        orderRepo.save(order);
                     }
                 }
             } catch (Exception e) {
