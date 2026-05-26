@@ -17,6 +17,8 @@ import com.shopping.dto.OrderResponseDTO;
 import com.shopping.dto.ProductResponse;
 import com.shopping.dto.QuantityRequest;
 import com.shopping.entity.Cart;
+import com.shopping.entity.CartItem;
+import com.shopping.entity.OrderItem;
 import com.shopping.entity.Orders;
 import com.shopping.entity.Product;
 import com.shopping.entity.User;
@@ -164,6 +166,21 @@ public ResponseEntity<Map<String, Object>> checkout(
     order.setStatus("PENDING");
     order.setTotal(cartTotal);  // ✅ Use actual cart total
     order.setOrderDate(java.time.LocalDateTime.now());
+
+    // Copy items from active cart to order
+    Cart cart = cartService.getCart(user.getId());
+    if (cart != null && cart.getItems() != null && !cart.getItems().isEmpty()) {
+        for (CartItem cartItem : cart.getItems()) {
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(order);
+            orderItem.setProduct(cartItem.getProduct());
+            orderItem.setQuantity(cartItem.getQuantity());
+            orderItem.setPrice(cartItem.getProduct().getPrice());
+            orderItem.setPriceAtPurchase(cartItem.getProduct().getPrice());
+            order.getItems().add(orderItem);
+        }
+    }
+
     order = orderRepo.save(order);
 
     Map<String, Object> res = new HashMap<>();

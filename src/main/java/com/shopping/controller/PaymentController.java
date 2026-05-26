@@ -3,6 +3,9 @@ package com.shopping.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shopping.config.CashfreeConfig;
+import com.shopping.entity.Cart;
+import com.shopping.entity.CartItem;
+import com.shopping.entity.OrderItem;
 import com.shopping.entity.Orders;
 import com.shopping.repository.OrderRepository;
 import com.shopping.repository.UserRepository;
@@ -117,6 +120,21 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
             order.setTotal(amount);
             order.setShippingAddress(shippingStr);
             order.setStatus("PENDING");
+            order.setOrderDate(java.time.LocalDateTime.now());
+
+            Cart cart = cartService.getCart(user.getId());
+            if (cart != null && cart.getItems() != null && !cart.getItems().isEmpty()) {
+                for (CartItem cartItem : cart.getItems()) {
+                    OrderItem orderItem = new OrderItem();
+                    orderItem.setOrder(order);
+                    orderItem.setProduct(cartItem.getProduct());
+                    orderItem.setQuantity(cartItem.getQuantity());
+                    orderItem.setPrice(cartItem.getProduct().getPrice());
+                    orderItem.setPriceAtPurchase(cartItem.getProduct().getPrice());
+                    order.getItems().add(orderItem);
+                }
+            }
+
             order = orderRepo.save(order);
 
             CreateOrderResult result = cashfreeService.createOrder(
