@@ -18,7 +18,7 @@ import lombok.EqualsAndHashCode;
 
 @Entity
 @Data
-@EqualsAndHashCode(exclude = {"user"})
+@EqualsAndHashCode(exclude = { "user" })
 public class Cart {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
