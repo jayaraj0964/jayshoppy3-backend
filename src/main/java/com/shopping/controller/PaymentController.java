@@ -142,6 +142,28 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
     @GetMapping("/user/order-status/{orderId}")
     public ResponseEntity<Map<String, Object>> getOrderStatus(@PathVariable Long orderId) {
         Orders order = orderRepo.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
+
+        // Fallback: Check Cashfree dynamically if order status is still PENDING
+        if ("PENDING".equalsIgnoreCase(order.getStatus())) {
+            try {
+                String cashfreeOrderId = "ORD_" + orderId;
+                JsonNode cfOrder = cashfreeService.getCashfreeOrder(cashfreeOrderId);
+                if (cfOrder != null) {
+                    String cfStatus = cfOrder.path("order_status").asText("");
+                    log.info("Fetched real-time status from Cashfree for {}: {}", cashfreeOrderId, cfStatus);
+
+                    if ("PAID".equalsIgnoreCase(cfStatus)) {
+                        order.setStatus("PAID");
+                        // Set transactionId to cf_order_id as fallback
+                        order.setTransactionId(cfOrder.path("cf_order_id").asText(""));
+                        orderRepo.save(order);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to retrieve order status from Cashfree dynamically", e);
+            }
+        }
+
         Map<String, Object> res = new HashMap<>();
         res.put("status", order.getStatus());
         res.put("transactionId", order.getTransactionId() == null ? "" : order.getTransactionId());
