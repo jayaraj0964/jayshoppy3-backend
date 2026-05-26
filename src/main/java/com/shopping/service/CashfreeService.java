@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
@@ -145,7 +146,7 @@ public class CashfreeService {
 
             return result;
 
-       } catch (HttpClientErrorException e) {
+    } catch (HttpClientErrorException e) {
     // SUPER SAFE + DETAILED 401 LOGGING (NO NULL POINTER)
     log.error("==================================================");
     log.error("CASHFREE PAYMENT GATEWAY ERROR!");
@@ -197,7 +198,24 @@ public class CashfreeService {
     }
 
     throw new RuntimeException(exceptionMessage, e);
-} catch (Exception e) {
+    } catch (HttpServerErrorException e) {
+            // Log server-side errors with full response body for troubleshooting
+            log.error("==================================================");
+            log.error("CASHFREE SERVER ERROR! HTTP Status : {}", e.getStatusCode());
+            String responseBody = e.getResponseBodyAsString();
+            if (responseBody == null || responseBody.trim().isEmpty()) responseBody = "[EMPTY OR NULL RESPONSE BODY]";
+            log.error("Response Body   : {}", responseBody);
+            log.error("Request URL     : {}", url);
+            log.error("App ID          : {}", cashfreeConfig.getAppId());
+            log.error("Secret Key Last : ...{}",
+                      cashfreeConfig.getSecretKey().substring(
+                          Math.max(0, cashfreeConfig.getSecretKey().length() - 10)));
+            log.error("IMMEDIATE ACTION → Reproduce request with curl/postman and contact Cashfree support if issue persists");
+            log.error("==================================================");
+
+            throw new RuntimeException("Cashfree internal server error; see logs for response body", e);
+
+        } catch (Exception e) {
             log.error("Exception during Cashfree order creation", e);
             throw new RuntimeException("Failed to create Cashfree order", e);
         }
