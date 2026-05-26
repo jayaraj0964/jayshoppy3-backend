@@ -242,6 +242,9 @@ public ResponseEntity<Map<String, Object>> createUpiOnlyPayment(@RequestBody Map
         Map<String, Object> res = new HashMap<>();
         res.put("status", order.getStatus());
         res.put("transactionId", order.getTransactionId() == null ? "" : order.getTransactionId());
+        res.put("total", order.getTotal());
+        res.put("shippingAddress", order.getShippingAddress());
+        res.put("orderDate", order.getOrderDate() != null ? order.getOrderDate().toString() : "");
         return ResponseEntity.ok(res);
     }
 
