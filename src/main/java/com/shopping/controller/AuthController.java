@@ -62,9 +62,4 @@ public ResponseEntity<String> login(@RequestBody LoginRequest request) {
         User saved = authService.register(request);
         return ResponseEntity.ok(new UserResponse(saved.getId(), saved.getName(), saved.getEmail()));
     }
-
-    @GetMapping("/ping")
-    public ResponseEntity<String> ping() {
-        return ResponseEntity.ok("pong");
-    }
 }

@@ -13,7 +13,7 @@ public class KeepAliveScheduler {
     private static final Logger log = LoggerFactory.getLogger(KeepAliveScheduler.class);
     private final RestTemplate restTemplate = new RestTemplate();
 
-    @Value("${app.keep-alive-url:https://jayshoppy3-backend-2.onrender.com/api/auth/ping}")
+    @Value("${app.keep-alive-url:https://jayshoppy3-backend-2.onrender.com/ping}")
     private String keepAliveUrl;
 
     // Run every 3 minutes (180,000 milliseconds)
