@@ -16,8 +16,8 @@ public class KeepAliveScheduler {
     @Value("${app.keep-alive-url:https://jayshoppy3-backend-2.onrender.com/ping}")
     private String keepAliveUrl;
 
-    // Run every 3 minutes (180,000 milliseconds)
-    @Scheduled(fixedDelay = 180000)
+    // Run every 3 minutes using cron expression (at second 0, every 3rd minute)
+    @Scheduled(cron = "0 */3 * * * *")
     public void pingSelf() {
         try {
             log.info("Sending self-keep-alive request to: {}", keepAliveUrl);

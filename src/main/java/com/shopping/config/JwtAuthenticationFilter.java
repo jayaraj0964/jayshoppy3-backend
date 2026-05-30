@@ -24,9 +24,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserDetailsService userDetailsService;
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
     
-  // config/JwtAuthenticationFilter.java
-@Override
-protected void doFilterInternal(
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        return "/ping".equals(path);
+    }
+
+    // config/JwtAuthenticationFilter.java
+    @Override
+    protected void doFilterInternal(
         HttpServletRequest request,
         HttpServletResponse response,
         FilterChain filterChain
